@@ -7,7 +7,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # === Trading Configuration ===
 SYMBOL = "XAU/USD"
-TIMEFRAMES = ["1day", "4h", "1h", "15min"]
+TIMEFRAMES = ["1day", "4h", "1h", "15min", "5min", "1min"]
 PRIMARY_TIMEFRAME = "15min"
 
 # === Signal Configuration ===
