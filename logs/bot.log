@@ -1,0 +1,15 @@
+2026-05-20 09:11:06.284 | INFO     | __main__:main:55 - 🚀 Starting Gold AI Bot...
+2026-05-20 09:11:16.387 | INFO     | bot_messages.bot:send_message:23 - Message sent to Telegram
+2026-05-20 09:11:16.391 | INFO     | __main__:main:71 - ⏰ Scheduler started — running every 30 minutes
+2026-05-20 09:11:16.392 | INFO     | __main__:main:72 - 🟢 Bot is live. Press Ctrl+C to stop.
+2026-05-20 09:41:16.490 | INFO     | __main__:analyze_and_signal:25 - ────────────────────────────────────────
+2026-05-20 09:41:16.491 | INFO     | __main__:analyze_and_signal:26 - 🔄 Running analysis cycle...
+2026-05-20 09:41:24.080 | ERROR    | data.fetcher:fetch_candles:54 - Data fetch error: 'volume'
+2026-05-20 09:41:24.081 | WARNING  | data.fetcher:fetch_all_timeframes:64 - Empty data for timeframe: 1day
+2026-05-20 09:41:24.365 | ERROR    | data.fetcher:fetch_candles:54 - Data fetch error: 'volume'
+2026-05-20 09:41:24.365 | WARNING  | data.fetcher:fetch_all_timeframes:64 - Empty data for timeframe: 4h
+2026-05-20 09:41:24.483 | ERROR    | data.fetcher:fetch_candles:54 - Data fetch error: 'volume'
+2026-05-20 09:41:24.484 | WARNING  | data.fetcher:fetch_all_timeframes:64 - Empty data for timeframe: 1h
+2026-05-20 09:41:24.684 | ERROR    | data.fetcher:fetch_candles:54 - Data fetch error: 'volume'
+2026-05-20 09:41:24.684 | WARNING  | data.fetcher:fetch_all_timeframes:64 - Empty data for timeframe: 15min
+2026-05-20 09:41:24.684 | WARNING  | __main__:analyze_and_signal:34 - No data fetched — skipping this cycle
