@@ -33,15 +33,15 @@ class DataFetcher:
 
             df = pd.DataFrame(data["values"])
             df["datetime"] = pd.to_datetime(df["datetime"])
-            df = df.rename(columns={
-                "open": "open",
-                "high": "high",
-                "low": "low",
-                "close": "close",
-                "volume": "volume"
-            })
-            for col in ["open", "high", "low", "close", "volume"]:
-                df[col] = pd.to_numeric(df[col])
+
+            # Convert price columns to numeric
+            for col in ["open", "high", "low", "close"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col])
+
+            # Add volume column if not present (free tier doesn't include it)
+            if "volume" not in df.columns:
+                df["volume"] = 0
 
             df = df.sort_values("datetime").reset_index(drop=True)
             logger.info(f"Fetched {len(df)} candles for {interval}")
