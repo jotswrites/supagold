@@ -4,9 +4,8 @@ from telegram.error import TelegramError
 from loguru import logger
 import sys
 
-# Configure logger
 logger.remove()
-logger.add(sys.stdout, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{message}</level>")
+logger.add(sys.stdout, level="INFO")
 
 class SignalBot:
     def __init__(self, token, chat_id):
@@ -20,7 +19,7 @@ class SignalBot:
                 text=text,
                 parse_mode="HTML"
             )
-            logger.info("Message sent to Telegram")
+            logger.info("Message sent")
             return True
         except TelegramError as e:
             logger.error(f"Telegram error: {e}")
@@ -34,21 +33,9 @@ class SignalBot:
             "⏰ Signals every 30 minutes\n"
             "📊 Timeframes: 1D | 4H | 1H | 15M\n"
             "━━━━━━━━━━━━━━━━━\n"
-            "ℹ️ <i>Self-test phase. Analysis engine loading...</i>"
+            "ℹ️ <i>Self-test phase</i>"
         )
         await self.send_message(message)
 
     async def send_signal(self, signal_data: dict):
-        timestamp = signal_data.get('timestamp', 'N/A')
-        mode = signal_data.get('mode', 'WAIT')
-        confidence = signal_data.get('confidence', 0)
-
-        message = (
-            f"📊 <b>XAU/USD Signal — {timestamp}</b>\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"🎯 Mode: {mode}\n"
-            f"📈 Confidence: {confidence}%\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"⏰ Next update in 30 min"
-        )
-        await self.send_message(message)
+        await self.send_message(str(signal_data))
