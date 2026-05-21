@@ -18,8 +18,7 @@ CHECK_INTERVAL_MINUTES = 30
 
 async def run_scheduler():
     logger.info("=" * 45)
-    logger.info("   GOLDBOT SCHEDULER v1.0 STARTED")
-    logger.info("   Full MTF Dashboard every 30 minutes — 24/7")
+    logger.info("   GOLDBOT SCHEDULER v1.0 STARTED — 24/7")
     logger.info("   Timeframes: 1D | 4H | 1H | 15M | 5M | 1M")
     logger.info("=" * 45)
 

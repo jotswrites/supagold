@@ -20,3 +20,11 @@ def calculate_rsi(df, period=14, column="close"):
     avg_loss = loss.ewm(span=period, adjust=False).mean()
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
+
+def calculate_macd(df, fast=12, slow=26, signal=9):
+    ema_fast = calculate_ema(df, fast)
+    ema_slow = calculate_ema(df, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = calculate_ema(pd.DataFrame({"close": macd_line}), signal, column="close")
+    histogram = macd_line - signal_line
+    return {"macd": macd_line, "signal": signal_line, "histogram": histogram}
