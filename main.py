@@ -141,7 +141,6 @@ async def run_one_cycle():
     logger.info("🔄 Running analysis for all symbols...")
 
     bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
-    await bot.start_polling()
 
     for symbol in SYMBOLS:
         try:
