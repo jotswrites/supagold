@@ -21,27 +21,13 @@ class SignalBot:
             logger.error(f"Telegram error: {e}")
             return False
 
-    async def send_stats(self):
-        stats = get_stats()
-        message = (
-            f"📊 <b>GoldBot Performance</b>\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"🔢 Total Signals: {stats['total']}\n"
-            f"✅ Wins: {stats['wins']}\n"
-            f"❌ Losses: {stats['losses']}\n"
-            f"⏳ Pending: {stats['pending']}\n"
-            f"📈 Win Rate: {stats['win_rate']}%\n"
-            f"💰 Total PnL: {stats['total_pnl']} pips\n"
-            f"📐 Avg R:R: 1:{stats['avg_rr']}"
-        )
-        await self.send_message(message)
-
     async def send_startup_message(self):
         message = (
-            "🤖 <b>GoldBot v2.0 is now online — 24/7</b>\n"
-            "Multi-Symbol Dashboard\n"
-            "XAU/USD | GBP/USD\n"
+            "🤖 <b>GoldBot v3.0 — Position-Aware AI</b>\n"
             "━━━━━━━━━━━━━━━━━\n"
-            "🕯️ Patterns | 📐 Fib | 📏 S/R | 🔮 Harmonic"
+            "🐋 SWING | 🐟 SCALP — 4-7 signals/day\n"
+            "XAU/USD | GBP/USD\n"
+            "Only signals when confidence ≥ 75%\n"
+            "Manages positions from entry to exit"
         )
         await self.send_message(message)
