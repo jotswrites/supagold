@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from datetime import datetime
 from loguru import logger
 from pytz import UTC
@@ -110,7 +111,6 @@ async def analyze_symbol(symbol, bot):
 
     confidence, score_breakdown = calculate_confidence(results, patterns, fib_1h, sr_1h, vol_15m)
 
-    # Journal EVERY signal thought (live or ghost)
     trade_type = classify_trade_type(results) if primary["bias_dir"] != "NEUTRAL" else "NONE"
     journal_id = log_journal(symbol, primary["bias_dir"], confidence, score_breakdown, patterns, trade_type)
 
@@ -169,7 +169,7 @@ async def analyze_symbol(symbol, bot):
         )
         return
 
-    # --- Ghost trade simulation (all signals) ---
+    # --- Ghost trade simulation ---
     one_min_data = data.get("1min", None)
     if one_min_data is not None and not one_min_data.empty and primary["bias_dir"] != "NEUTRAL":
         sl_tp = calculate_sl_tp(primary["price"], primary["atr"], primary["bias_dir"], trade_type)
@@ -234,7 +234,9 @@ async def run_one_cycle():
 
     bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
-    for symbol in SYMBOLS:
+    for i, symbol in enumerate(SYMBOLS):
+        if i > 0:
+            time.sleep(3)  # Pause between symbols to respect rate limit
         try:
             await analyze_symbol(symbol, bot)
         except Exception as e:
