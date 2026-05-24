@@ -263,31 +263,29 @@ async def run_one_cycle():
             logger.error(f"Daily brief failed: {e}")
 
     # --- Weekly Report + Self-Review (Friday 20:00 UTC) ---
-if now.weekday() == 4 and now.hour == 20 and now.minute < 30:
-    from engine.reporter import generate_weekly_report
-    from engine.self_review import analyze_journal, apply_adjustments
-    try:
-        report = generate_weekly_report()
-        await bot.send_message(report)
-        logger.info("📊 Weekly report sent")
-        
-        # Run self-review
-        review = analyze_journal()
-        if review["ready"]:
-            await bot.send_message(
-                f"🧠 <b>Self-Review Results</b>\n"
-                f"━━━━━━━━━━━━━━━━━\n"
-                f"{review['message']}\n"
-                f"━━━━━━━━━━━━━━━━━\n"
-                f"🔧 <b>Adjustments Applied:</b>\n"
-                f"{chr(10).join([f'• {k}: → {v}' for k,v in review['adjustments'].items()]) if review['adjustments'] else '• No adjustments needed'}"
-            )
-            if review["adjustments"]:
-                apply_adjustments(review["adjustments"])
-        else:
-            await bot.send_message(f"🧠 Self-Review: {review['message']}")
-    except Exception as e:
-        logger.error(f"Weekly report failed: {e}")
+    if now.weekday() == 4 and now.hour == 20 and now.minute < 30:
+        from engine.reporter import generate_weekly_report
+        from engine.self_review import analyze_journal, apply_adjustments
+        try:
+            report = generate_weekly_report()
+            await bot.send_message(report)
+            logger.info("📊 Weekly report sent")
+            review = analyze_journal()
+            if review["ready"]:
+                await bot.send_message(
+                    f"🧠 <b>Self-Review Results</b>\n"
+                    f"━━━━━━━━━━━━━━━━━\n"
+                    f"{review['message']}\n"
+                    f"━━━━━━━━━━━━━━━━━\n"
+                    f"🔧 <b>Adjustments Applied:</b>\n"
+                    f"{chr(10).join([f'• {k}: → {v}' for k,v in review['adjustments'].items()]) if review['adjustments'] else '• No adjustments needed'}"
+                )
+                if review["adjustments"]:
+                    apply_adjustments(review["adjustments"])
+            else:
+                await bot.send_message(f"🧠 Self-Review: {review['message']}")
+        except Exception as e:
+            logger.error(f"Weekly report failed: {e}")
 
     # --- Normal symbol analysis ---
     for i, symbol in enumerate(SYMBOLS):
