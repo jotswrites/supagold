@@ -40,6 +40,7 @@ def init_db():
     conn.close()
 
 def log_signal(symbol, direction, entry, sl, tp1, tp2, confidence, trade_type="SCALP"):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''INSERT INTO signals (symbol, timestamp, direction, entry, sl, tp1, tp2, confidence, trade_type)
@@ -51,6 +52,7 @@ def log_signal(symbol, direction, entry, sl, tp1, tp2, confidence, trade_type="S
     return sid
 
 def log_journal(symbol, direction, confidence, breakdown, patterns, trade_type):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''INSERT INTO journal (symbol, timestamp, direction, confidence, confidence_breakdown, patterns, trade_type)
@@ -62,6 +64,7 @@ def log_journal(symbol, direction, confidence, breakdown, patterns, trade_type):
     return jid
 
 def update_journal_outcome(journal_id, outcome, pnl):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE journal SET ghost_outcome=?, ghost_pnl=? WHERE id=?", (outcome, pnl, journal_id))
@@ -69,6 +72,7 @@ def update_journal_outcome(journal_id, outcome, pnl):
     conn.close()
 
 def open_position(symbol, direction, entry, sl, tp1, tp2, confidence, trade_type):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     now = datetime.utcnow().isoformat()
@@ -80,6 +84,7 @@ def open_position(symbol, direction, entry, sl, tp1, tp2, confidence, trade_type
     conn.close()
 
 def get_position(symbol):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT * FROM positions WHERE symbol=? AND status='active'", (symbol,))
@@ -90,6 +95,7 @@ def get_position(symbol):
     return None
 
 def close_position(symbol, outcome, pnl=0):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE positions SET status='closed', updated_at=? WHERE symbol=? AND status='active'", (datetime.utcnow().isoformat(), symbol))
@@ -97,6 +103,7 @@ def close_position(symbol, outcome, pnl=0):
     conn.close()
 
 def update_position_sl(symbol, new_sl):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE positions SET sl=?, updated_at=? WHERE symbol=? AND status='active'", (new_sl, datetime.utcnow().isoformat(), symbol))
@@ -104,6 +111,7 @@ def update_position_sl(symbol, new_sl):
     conn.close()
 
 def open_ghost_position(symbol, direction, entry, sl, tp1, tp2, confidence, trade_type):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''INSERT INTO ghost_positions (symbol, direction, entry, sl, tp1, tp2, confidence, trade_type, opened_at)
@@ -113,6 +121,7 @@ def open_ghost_position(symbol, direction, entry, sl, tp1, tp2, confidence, trad
     conn.close()
 
 def get_ghost_position(symbol):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT * FROM ghost_positions WHERE symbol=? AND outcome IS NULL ORDER BY id DESC LIMIT 1", (symbol,))
@@ -121,6 +130,7 @@ def get_ghost_position(symbol):
     return row
 
 def close_ghost_position(symbol, outcome, pnl=0):
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE ghost_positions SET outcome=?, pnl=?, closed_at=? WHERE symbol=? AND outcome IS NULL",
