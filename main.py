@@ -86,13 +86,14 @@ async def analyze_symbol(symbol, bot):
     blackout, event_name = is_high_impact_news_within()
     if blackout:
         logger.info(f"{symbol}: News blackout ({event_name}). Skipping.")
+        await bot.send_message(f"🔇 {symbol}: News blackout — {event_name}\nSkipping this cycle.")
         return
 
     fetcher = DataFetcher(symbol)
-data = fetcher.fetch_all_timeframes()
-if not data:
-    await bot.send_message(f"⚠️ {symbol}: No data fetched (API limit or error)")
-    return
+    data = fetcher.fetch_all_timeframes()
+    if not data:
+        await bot.send_message(f"⚠️ {symbol}: No data fetched (API limit or error)")
+        return
 
     results = {}
     for tf, df in data.items():
@@ -102,6 +103,7 @@ if not data:
             results[label] = r
 
     if not results:
+        await bot.send_message(f"⚠️ {symbol}: Could not analyze any timeframe")
         return
 
     primary = results.get("15M", results.get("1H", results.get("4H")))
@@ -182,6 +184,18 @@ if not data:
             )
             update_journal_outcome(journal_id, outcome, pnl)
 
+    # --- Status card (always sent) ---
+    await bot.send_message(
+        f"🔍 {symbol} — {datetime.now(UTC).strftime('%H:%M UTC')}\n"
+        f"Bias: {primary['bias_dir']} | Confidence: {confidence}% (need {CONFIDENCE_THRESHOLD}%)\n"
+        f"MTF:{score_breakdown.get('mtf_alignment',0)} | "
+        f"Pat:{score_breakdown.get('pattern_quality',0)} | "
+        f"Loc:{score_breakdown.get('location',0)} | "
+        f"Vol:{score_breakdown.get('volume',0)} | "
+        f"Ses:{score_breakdown.get('session',0)} | "
+        f"Reg:{score_breakdown.get('regime',0)}"
+    )
+
     # --- New signal check ---
     if confidence < CONFIDENCE_THRESHOLD:
         logger.info(f"{symbol}: Confidence {confidence}% — below threshold, no signal")
@@ -228,9 +242,6 @@ if not data:
     )
     await bot.send_message(message)
 
-# This line only runs if no signal was sent and no position exists
-logger.info(f"{symbol}: Analysis complete — confidence {confidence}% (threshold: {CONFIDENCE_THRESHOLD}%)")
-
 async def run_one_cycle():
     logger.info("─" * 40)
     logger.info("🔄 v4.0 — Position-aware + News filter + Ghost trading")
@@ -240,7 +251,7 @@ async def run_one_cycle():
 
     for i, symbol in enumerate(SYMBOLS):
         if i > 0:
-            time.sleep(3)  # Pause between symbols to respect rate limit
+            time.sleep(3)
         try:
             await analyze_symbol(symbol, bot)
         except Exception as e:
