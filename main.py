@@ -228,6 +228,9 @@ if not data:
     )
     await bot.send_message(message)
 
+# This line only runs if no signal was sent and no position exists
+logger.info(f"{symbol}: Analysis complete — confidence {confidence}% (threshold: {CONFIDENCE_THRESHOLD}%)")
+
 async def run_one_cycle():
     logger.info("─" * 40)
     logger.info("🔄 v4.0 — Position-aware + News filter + Ghost trading")
