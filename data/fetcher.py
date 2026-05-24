@@ -3,10 +3,26 @@ import pandas as pd
 from loguru import logger
 import sys
 import time
+from datetime import datetime, timezone
 from bot_config.settings import TWELVE_DATA_API_KEY, SYMBOL as DEFAULT_SYMBOL, TIMEFRAMES
 
 logger.remove()
 logger.add(sys.stdout, level="INFO")
+
+_DAILY_LIMIT = 750
+_requests_today = 0
+_last_reset_day = None
+
+def _reset_counter_if_new_day():
+    global _requests_today, _last_reset_day
+    today = datetime.now(timezone.utc).date()
+    if _last_reset_day != today:
+        _requests_today = 0
+        _last_reset_day = today
+
+def _can_make_request(n=1):
+    _reset_counter_if_new_day()
+    return (_requests_today + n) <= _DAILY_LIMIT
 
 class DataFetcher:
     BASE_URL = "https://api.twelvedata.com/time_series"
@@ -16,6 +32,12 @@ class DataFetcher:
         self.symbol = symbol if symbol else DEFAULT_SYMBOL
 
     def fetch_candles(self, interval: str, outputsize: int = 200, retries: int = 3) -> pd.DataFrame:
+        global _requests_today
+
+        if not _can_make_request():
+            logger.error(f"🚨 API daily limit ({_DAILY_LIMIT}) reached. Skipping {self.symbol} {interval}.")
+            return pd.DataFrame()
+
         params = {
             "symbol": self.symbol,
             "interval": interval,
@@ -26,17 +48,22 @@ class DataFetcher:
         for attempt in range(retries):
             try:
                 response = requests.get(self.BASE_URL, params=params, timeout=30)
-                
+                _requests_today += 1
+
+                if response.status_code == 429:
+                    logger.warning(f"429 Rate limited. Requests today: {_requests_today}")
+                    return pd.DataFrame()
+
                 if response.status_code == 503:
-                    logger.warning(f"503 for {self.symbol} {interval}, retry {attempt+1}/{retries}")
+                    logger.warning(f"503 Service Unavailable for {self.symbol} {interval}, retry {attempt+1}/{retries}")
                     time.sleep(5)
                     continue
-                    
+
                 response.raise_for_status()
                 data = response.json()
 
                 if "values" not in data:
-                    logger.error(f"Bad response for {self.symbol}: {data}")
+                    logger.error(f"Unexpected API response for {self.symbol}: {data}")
                     return pd.DataFrame()
 
                 df = pd.DataFrame(data["values"])
@@ -50,17 +77,17 @@ class DataFetcher:
                     df["volume"] = 0
 
                 df = df.sort_values("datetime").reset_index(drop=True)
-                logger.info(f"Fetched {len(df)} candles for {self.symbol} {interval}")
+                logger.info(f"Fetched {len(df)} candles for {self.symbol} {interval} (daily: {_requests_today}/{_DAILY_LIMIT})")
                 return df
 
             except requests.RequestException as e:
-                logger.error(f"Request failed for {self.symbol} {interval}: {e}")
+                logger.error(f"API request failed for {self.symbol} {interval}: {e}")
                 if attempt < retries - 1:
                     time.sleep(5)
                 else:
                     return pd.DataFrame()
             except Exception as e:
-                logger.error(f"Error for {self.symbol} {interval}: {e}")
+                logger.error(f"Data fetch error for {self.symbol} {interval}: {e}")
                 return pd.DataFrame()
 
         return pd.DataFrame()
