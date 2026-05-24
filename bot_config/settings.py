@@ -26,3 +26,7 @@ STRATEGY_WEIGHTS = {
 
 LOG_LEVEL = "INFO"
 LOG_FILE = "logs/bot.log"
+
+# === Self-Learning (updated weekly by self-review engine) ===
+# These weights are adjusted automatically based on journal performance.
+# Do not edit manually unless resetting.
