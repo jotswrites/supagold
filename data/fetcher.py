@@ -51,8 +51,9 @@ class DataFetcher:
                 _requests_today += 1
 
                 if response.status_code == 429:
-                    logger.warning(f"429 Rate limited. Requests today: {_requests_today}")
-                    return pd.DataFrame()
+                    logger.warning(f"429 Rate limited. Waiting 10 seconds... (daily: {_requests_today}/{_DAILY_LIMIT})")
+                    time.sleep(10)
+                    continue
 
                 if response.status_code == 503:
                     logger.warning(f"503 Service Unavailable for {self.symbol} {interval}, retry {attempt+1}/{retries}")
@@ -64,6 +65,10 @@ class DataFetcher:
 
                 if "values" not in data:
                     logger.error(f"Unexpected API response for {self.symbol}: {data}")
+                    if "code" in data and data["code"] == 429:
+                        logger.warning("Rate limited. Waiting 15 seconds...")
+                        time.sleep(15)
+                        continue
                     return pd.DataFrame()
 
                 df = pd.DataFrame(data["values"])
@@ -95,6 +100,7 @@ class DataFetcher:
     def fetch_all_timeframes(self) -> dict:
         data = {}
         for tf in TIMEFRAMES:
+            time.sleep(1.5)  # Respect 8 requests/minute limit
             df = self.fetch_candles(tf)
             if not df.empty:
                 data[tf] = df
