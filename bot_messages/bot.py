@@ -23,11 +23,13 @@ class SignalBot:
 
     async def send_startup_message(self):
         message = (
-            "🤖 <b>GoldBot v3.0 — Position-Aware AI</b>\n"
+            "🤖 <b>GoldBot v4.0 — Self-Learning Strategist</b>\n"
             "━━━━━━━━━━━━━━━━━\n"
             "🐋 SWING | 🐟 SCALP — 4-7 signals/day\n"
             "XAU/USD | GBP/USD\n"
-            "Only signals when confidence ≥ 75%\n"
-            "Manages positions from entry to exit"
+            "✅ News filter active\n"
+            "👻 Ghost trading active\n"
+            "📓 Journal logging active\n"
+            "Only signals when confidence ≥ 75%"
         )
         await self.send_message(message)
