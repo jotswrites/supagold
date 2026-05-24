@@ -89,9 +89,10 @@ async def analyze_symbol(symbol, bot):
         return
 
     fetcher = DataFetcher(symbol)
-    data = fetcher.fetch_all_timeframes()
-    if not data:
-        return
+data = fetcher.fetch_all_timeframes()
+if not data:
+    await bot.send_message(f"⚠️ {symbol}: No data fetched (API limit or error)")
+    return
 
     results = {}
     for tf, df in data.items():
