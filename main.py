@@ -247,8 +247,30 @@ async def run_one_cycle():
     logger.info("🔄 v4.0 — Position-aware + News filter + Ghost trading")
     init_db()
 
+    now = datetime.now(UTC)
     bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
+    # --- Daily Brief (7:00 UTC) ---
+    if now.hour == 7 and now.minute < 30:
+        from engine.reporter import generate_daily_brief
+        try:
+            brief = generate_daily_brief()
+            await bot.send_message(brief)
+            logger.info("📅 Daily brief sent")
+        except Exception as e:
+            logger.error(f"Daily brief failed: {e}")
+
+    # --- Weekly Report (Friday 20:00 UTC) ---
+    if now.weekday() == 4 and now.hour == 20 and now.minute < 30:
+        from engine.reporter import generate_weekly_report
+        try:
+            report = generate_weekly_report()
+            await bot.send_message(report)
+            logger.info("📊 Weekly report sent")
+        except Exception as e:
+            logger.error(f"Weekly report failed: {e}")
+
+    # --- Normal symbol analysis ---
     for i, symbol in enumerate(SYMBOLS):
         if i > 0:
             time.sleep(3)
