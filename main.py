@@ -185,20 +185,20 @@ async def analyze_symbol(symbol, bot):
             update_journal_outcome(journal_id, outcome, pnl)
 
     # --- Status card (every 2 hours only) ---
-now = datetime.now(UTC)
-if now.hour % 2 == 0 and now.minute < 30:
-    await bot.send_message(
-        f"🔍 {symbol} — {now.strftime('%H:%M UTC')}\n"
-        f"Bias: {primary['bias_dir']} | Confidence: {confidence}% (need {CONFIDENCE_THRESHOLD}%)\n"
-        f"MTF:{score_breakdown.get('mtf_alignment',0)} | "
-        f"Pat:{score_breakdown.get('pattern_quality',0)} | "
-        f"Loc:{score_breakdown.get('location',0)} | "
-        f"Vol:{score_breakdown.get('volume',0)} | "
-        f"Ses:{score_breakdown.get('session',0)} | "
-        f"Reg:{score_breakdown.get('regime',0)}"
-    )
+    now = datetime.now(UTC)
+    if now.hour % 2 == 0 and now.minute < 30:
+        await bot.send_message(
+            f"🔍 {symbol} — {now.strftime('%H:%M UTC')}\n"
+            f"Bias: {primary['bias_dir']} | Confidence: {confidence}% (need {CONFIDENCE_THRESHOLD}%)\n"
+            f"MTF:{score_breakdown.get('mtf_alignment',0)} | "
+            f"Pat:{score_breakdown.get('pattern_quality',0)} | "
+            f"Loc:{score_breakdown.get('location',0)} | "
+            f"Vol:{score_breakdown.get('volume',0)} | "
+            f"Ses:{score_breakdown.get('session',0)} | "
+            f"Reg:{score_breakdown.get('regime',0)}"
+        )
 
-# --- New signal check ---
+    # --- New signal check ---
     if confidence < CONFIDENCE_THRESHOLD:
         logger.info(f"{symbol}: Confidence {confidence}% — below threshold, no signal")
         return
