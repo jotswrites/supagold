@@ -210,4 +210,35 @@ async def analyze_symbol(symbol, bot):
         f"━━━━━━━━━━━━━━━━━\n"
         f"🎯 {direction_text} at {primary['price']:.4f}\n"
         f"🛑 SL: {sl_tp['sl']:.4f}\n"
-        f"✅ TP1: {sl_t
+        f"✅ TP1: {sl_tp['tp1']:.4f}\n"
+        f"✅ TP2: {sl_tp['tp2']:.4f}\n"
+        f"📊 Confidence: {confidence}%\n"
+        f"━━━━━━━━━━━━━━━━━\n"
+        f"📐 Multi-TF:\n{mtf_lines}\n"
+        f"━━━━━━━━━━━━━━━━━\n"
+        f"Breakdown: MTF:{score_breakdown['mtf_alignment']} | "
+        f"Pattern:{score_breakdown['pattern_quality']} | "
+        f"Location:{score_breakdown['location']} | "
+        f"Vol:{score_breakdown['volume']} | "
+        f"Session:{score_breakdown['session']} | "
+        f"Regime:{score_breakdown['regime']}\n"
+        f"━━━━━━━━━━━━━━━━━\n"
+        f"🕯️ Patterns: {', '.join(patterns[:3]) if patterns else 'None'}"
+    )
+    await bot.send_message(message)
+
+async def run_one_cycle():
+    logger.info("─" * 40)
+    logger.info("🔄 v4.0 — Position-aware + News filter + Ghost trading")
+    init_db()
+
+    bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+    for symbol in SYMBOLS:
+        try:
+            await analyze_symbol(symbol, bot)
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol}: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(run_one_cycle())
