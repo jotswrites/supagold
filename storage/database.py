@@ -110,6 +110,20 @@ def update_position_sl(symbol, new_sl):
     conn.commit()
     conn.close()
 
+def get_recent_journal(hours=24):
+    """Get journal entries from the last N hours."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    c.execute("SELECT * FROM journal WHERE timestamp >= ?", (cutoff,))
+    rows = c.fetchall()
+    conn.close()
+    
+    columns = ["id", "symbol", "timestamp", "direction", "confidence", 
+               "confidence_breakdown", "patterns", "trade_type", 
+               "ghost_outcome", "ghost_pnl", "peak_favorable", "time_to_outcome"]
+    return [dict(zip(columns, row)) for row in rows]
+
 def open_ghost_position(symbol, direction, entry, sl, tp1, tp2, confidence, trade_type):
     init_db()
     conn = sqlite3.connect(DB_PATH)
