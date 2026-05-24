@@ -184,9 +184,11 @@ async def analyze_symbol(symbol, bot):
             )
             update_journal_outcome(journal_id, outcome, pnl)
 
-    # --- Status card (always sent) ---
+    # --- Status card (every 2 hours only) ---
+now = datetime.now(UTC)
+if now.hour % 2 == 0 and now.minute < 30:
     await bot.send_message(
-        f"🔍 {symbol} — {datetime.now(UTC).strftime('%H:%M UTC')}\n"
+        f"🔍 {symbol} — {now.strftime('%H:%M UTC')}\n"
         f"Bias: {primary['bias_dir']} | Confidence: {confidence}% (need {CONFIDENCE_THRESHOLD}%)\n"
         f"MTF:{score_breakdown.get('mtf_alignment',0)} | "
         f"Pat:{score_breakdown.get('pattern_quality',0)} | "
