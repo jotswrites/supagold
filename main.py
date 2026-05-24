@@ -198,7 +198,7 @@ if now.hour % 2 == 0 and now.minute < 30:
         f"Reg:{score_breakdown.get('regime',0)}"
     )
 
-    # --- New signal check ---
+# --- New signal check ---
     if confidence < CONFIDENCE_THRESHOLD:
         logger.info(f"{symbol}: Confidence {confidence}% — below threshold, no signal")
         return
