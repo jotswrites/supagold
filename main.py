@@ -251,6 +251,7 @@ async def run_one_cycle():
 
     now = datetime.now(UTC)
     bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    await bot.start_polling()
 
     # --- Daily Brief (7:00 UTC) ---
     if now.hour == 7 and now.minute < 30:
