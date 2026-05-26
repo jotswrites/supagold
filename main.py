@@ -82,17 +82,14 @@ def calculate_sl_tp(price, atr, bias_dir, trade_type):
     return None
 
 async def analyze_symbol(symbol, bot):
-    # --- News filter check ---
     blackout, event_name = is_high_impact_news_within()
     if blackout:
         logger.info(f"{symbol}: News blackout ({event_name}). Skipping.")
-        await bot.send_message(f"🔇 {symbol}: News blackout — {event_name}\nSkipping this cycle.")
         return
 
     fetcher = DataFetcher(symbol)
     data = fetcher.fetch_all_timeframes()
     if not data:
-        await bot.send_message(f"⚠️ {symbol}: No data fetched (API limit or error)")
         return
 
     results = {}
@@ -103,7 +100,6 @@ async def analyze_symbol(symbol, bot):
             results[label] = r
 
     if not results:
-        await bot.send_message(f"⚠️ {symbol}: Could not analyze any timeframe")
         return
 
     primary = results.get("15M", results.get("1H", results.get("4H")))
@@ -117,7 +113,6 @@ async def analyze_symbol(symbol, bot):
     trade_type = classify_trade_type(results) if primary["bias_dir"] != "NEUTRAL" else "NONE"
     journal_id = log_journal(symbol, primary["bias_dir"], confidence, score_breakdown, patterns, trade_type)
 
-    # --- Manage existing position ---
     active_position = get_position(symbol)
     if active_position:
         current_price = primary["price"]
@@ -172,7 +167,6 @@ async def analyze_symbol(symbol, bot):
         )
         return
 
-    # --- Ghost trade simulation ---
     one_min_data = data.get("1min", None)
     if one_min_data is not None and not one_min_data.empty and primary["bias_dir"] != "NEUTRAL":
         sl_tp = calculate_sl_tp(primary["price"], primary["atr"], primary["bias_dir"], trade_type)
@@ -184,7 +178,6 @@ async def analyze_symbol(symbol, bot):
             )
             update_journal_outcome(journal_id, outcome, pnl)
 
-    # --- Status card (every 2 hours only) ---
     now = datetime.now(UTC)
     if now.hour % 2 == 0 and now.minute < 30:
         await bot.send_message(
@@ -198,9 +191,7 @@ async def analyze_symbol(symbol, bot):
             f"Reg:{score_breakdown.get('regime',0)}"
         )
 
-    # --- New signal check ---
     if confidence < CONFIDENCE_THRESHOLD:
-        logger.info(f"{symbol}: Confidence {confidence}% — below threshold, no signal")
         return
 
     bias_dir = primary["bias_dir"]
@@ -246,14 +237,13 @@ async def analyze_symbol(symbol, bot):
 
 async def run_one_cycle():
     logger.info("─" * 40)
-    logger.info("🔄 v4.0 — Position-aware + News filter + Ghost trading")
+    logger.info("🔄 v4.0 — Running")
     init_db()
 
     now = datetime.now(UTC)
     bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
-    # --- Daily Brief (7:00 UTC) ---
-    if now.hour == 7 and now.minute < 30:
+    if now.hour == 7 and now.minute < 45:
         from engine.reporter import generate_daily_brief
         try:
             brief = generate_daily_brief()
@@ -262,23 +252,21 @@ async def run_one_cycle():
         except Exception as e:
             logger.error(f"Daily brief failed: {e}")
 
-    # --- Weekly Report + Self-Review (Friday 20:00 UTC) ---
-    if now.weekday() == 4 and now.hour == 20 and now.minute < 30:
+    if now.weekday() == 4 and now.hour == 20 and now.minute < 45:
         from engine.reporter import generate_weekly_report
         from engine.self_review import analyze_journal, apply_adjustments
         try:
             report = generate_weekly_report()
             await bot.send_message(report)
-            logger.info("📊 Weekly report sent")
             review = analyze_journal()
             if review["ready"]:
                 await bot.send_message(
-                    f"🧠 <b>Self-Review Results</b>\n"
+                    f"🧠 <b>Self-Review</b>\n"
                     f"━━━━━━━━━━━━━━━━━\n"
                     f"{review['message']}\n"
                     f"━━━━━━━━━━━━━━━━━\n"
-                    f"🔧 <b>Adjustments Applied:</b>\n"
-                    f"{chr(10).join([f'• {k}: → {v}' for k,v in review['adjustments'].items()]) if review['adjustments'] else '• No adjustments needed'}"
+                    f"🔧 <b>Adjustments:</b>\n"
+                    f"{chr(10).join([f'• {k}: → {v}' for k,v in review['adjustments'].items()]) if review['adjustments'] else '• None'}"
                 )
                 if review["adjustments"]:
                     apply_adjustments(review["adjustments"])
@@ -287,7 +275,6 @@ async def run_one_cycle():
         except Exception as e:
             logger.error(f"Weekly report failed: {e}")
 
-    # --- Normal symbol analysis ---
     for i, symbol in enumerate(SYMBOLS):
         if i > 0:
             time.sleep(3)
