@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Mode'
-        required: false
-        default: 'normal'
-        type: string
 
 permissions:
   contents: write
@@ -19,42 +13,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Restore cached DB
         uses: actions/cache@v4
         with:
           path: storage/signals.db
           key: goldbot-db-${{ github.run_id }}
           restore-keys: goldbot-db-
-
       - name: Restore DB from journal branch
         run: |
           git fetch origin journal || true
           if git ls-remote --heads origin journal | grep journal; then
             git checkout origin/journal -- storage/signals.db 2>/dev/null || true
           fi
-
-      - name: Run analysis
+      - name: Run bot
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RUN_MODE: ${{ github.event.inputs.mode || 'normal' }}
-        run: |
-          if [ "$RUN_MODE" = "force" ]; then
-            python force_signal.py
-          else
-            python main.py
-          fi
-
+        run: python main.py
       - name: Push DB to journal branch
         run: |
           git config user.name "github-actions"
