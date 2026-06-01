@@ -25,7 +25,7 @@ TP1_ATR_MULT = 1.5
 TP2_ATR_MULT = 2.5
 MEMORY_FILE = "scalper_memory.json"
 ANTI_FLIP_MINUTES = 30
-LOCK_HOURS = 2  # auto-expire lock after this many hours
+LOCK_HOURS = 2
 TELEGRAM_OFFSET_FILE = "telegram_offset.txt"
 
 # ─── MEMORY ───────────────────────────────
@@ -71,7 +71,6 @@ def is_pair_locked(pair):
         return False
     lock_time = datetime.fromisoformat(lock["time"])
     if datetime.now(timezone.utc) - lock_time > timedelta(hours=LOCK_HOURS):
-        # Auto-expire lock
         signal_id = lock.get("signal_id")
         if signal_id and signal_id in memory["signals"]:
             memory["signals"][signal_id]["outcome"] = "expired"
@@ -101,7 +100,6 @@ def save_offset(offset):
         f.write(str(offset))
 
 def process_feedback():
-    """Check Telegram for /win or /loss replies and update memory."""
     token = TELEGRAM_BOT_TOKEN
     offset = get_offset()
     url = f"https://api.telegram.org/bot{token}/getUpdates"
@@ -121,7 +119,6 @@ def process_feedback():
             if not text or not reply_to:
                 continue
             original_text = reply_to.get("text", "")
-            # Check if replying to a signal message (contains a signal ID)
             signal_id = None
             for word in original_text.split():
                 if word.startswith("#SCALP-"):
@@ -129,14 +126,12 @@ def process_feedback():
                     break
             if not signal_id or signal_id not in memory["signals"]:
                 continue
-            # Process /win or /loss
             if text.strip().lower().startswith("/win"):
                 outcome = "win"
             elif text.strip().lower().startswith("/loss"):
                 outcome = "loss"
             else:
                 continue
-            # Only update if not already logged
             if memory["signals"][signal_id].get("outcome") is None:
                 memory["signals"][signal_id]["outcome"] = outcome
                 pair = memory["signals"][signal_id]["pair"]
@@ -149,7 +144,6 @@ def process_feedback():
         logger.error(f"Feedback error: {e}")
 
 def check_stats_command():
-    """If someone typed /stats, reply with current performance."""
     token = TELEGRAM_BOT_TOKEN
     offset = get_offset()
     url = f"https://api.telegram.org/bot{token}/getUpdates"
@@ -175,7 +169,6 @@ def check_stats_command():
                 for pat, s in sorted(memory["patterns"].items(), key=lambda x: x[1]["trades"], reverse=True)[:5]:
                     wr = (s["wins"]/s["trades"]*100) if s["trades"]>0 else 0
                     stats_msg += f"• {pat}: {wr:.0f}% ({s['trades']} trades)\n"
-                # Send reply
                 send_url = f"https://api.telegram.org/bot{token}/sendMessage"
                 requests.post(send_url, json={"chat_id": TELEGRAM_CHAT_ID, "text": stats_msg, "parse_mode": "HTML"})
         save_offset(offset)
@@ -262,7 +255,6 @@ def detect_pinbar(row):
 last_signal_time = {}
 
 async def analyze_pair(symbol, bot):
-    # Skip if pair is locked (unresolved signal)
     if is_pair_locked(symbol):
         logger.info(f"{symbol} locked — waiting for feedback on previous signal.")
         return
@@ -352,7 +344,6 @@ async def analyze_pair(symbol, bot):
         tp1 = round(entry - tp1_distance, 5)
         tp2 = round(entry - tp2_distance, 5)
 
-    # Generate signal ID and lock pair
     signal_id = f"SCALP-{now.strftime('%Y%m%d%H%M%S')}-{symbol}"
     memory["signals"][signal_id] = {
         "pair": symbol, "pattern": pattern_used, "entry": entry,
@@ -381,12 +372,58 @@ async def main():
     process_feedback()
     check_stats_command()
 
+    now = datetime.now(timezone.utc)
+    hour = now.hour
+    in_session = SESSION_HOURS[0] <= hour < SESSION_HOURS[1]
+
     bot = SignalBot(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+    if in_session:
+        flag_file = "session_heartbeat.txt"
+        if not os.path.exists(flag_file):
+            await bot.send_message(
+                f"🟢 <b>Scalper v2 Active</b>\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"⏰ {now.strftime('%H:%M UTC')}\n"
+                f"📊 Monitoring: {', '.join(PAIRS)}\n"
+                f"🎯 Waiting for price action at key levels..."
+            )
+            with open(flag_file, "w") as f:
+                f.write(now.isoformat())
+        elif os.path.exists(flag_file):
+            with open(flag_file) as f:
+                t = f.read().strip()
+            if t:
+                flag_time = datetime.fromisoformat(t)
+                if (now - flag_time).seconds > 6 * 3600:
+                    os.remove(flag_file)
+
+    signals_sent = 0
     for pair in PAIRS:
         try:
             await analyze_pair(pair, bot)
+            if is_pair_locked(pair):
+                signals_sent += 1
         except Exception as e:
             logger.error(f"Error {pair}: {e}")
+
+    if in_session and signals_sent == 0:
+        hour_file = f"no_trade_{now.hour}.txt"
+        if not os.path.exists(hour_file):
+            await bot.send_message(
+                f"🔍 <b>Scalper v2 – No Trade</b>\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"⏰ {now.strftime('%H:%M UTC')}\n"
+                f"✅ Bot is running\n"
+                f"⚠️ No valid price action setup at key levels\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"<i>Waiting for engulfing, pin bar, or hammer at S/R.</i>"
+            )
+            with open(hour_file, "w") as f:
+                f.write("sent")
+        for fname in os.listdir("."):
+            if fname.startswith("no_trade_") and fname != hour_file:
+                os.remove(fname)
 
 if __name__ == "__main__":
     asyncio.run(main())
