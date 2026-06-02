@@ -18,8 +18,7 @@ logger.add(sys.stdout, level="INFO", format="<green>{time:HH:mm:ss}</green> | <l
 
 # ─── CONFIG ───────────────────────────────
 PAIRS = ["XAUUSD", "GBPUSD"]
-TIMEFRAMES = {"main": "15min", "trigger": "1min"}
-SESSION_HOURS = (8, 21)
+SESSION_HOURS = (7, 21)  # Extended to capture London open
 SL_ATR_MULT = 1.0
 TP1_ATR_MULT = 1.5
 TP2_ATR_MULT = 2.5
@@ -27,6 +26,7 @@ MEMORY_FILE = "scalper_memory.json"
 ANTI_FLIP_MINUTES = 30
 LOCK_HOURS = 2
 TELEGRAM_OFFSET_FILE = "telegram_offset.txt"
+MIN_CONFIDENCE = 50  # Lowered from 55
 
 # ─── MEMORY ───────────────────────────────
 if os.path.exists(MEMORY_FILE):
@@ -45,7 +45,6 @@ def update_memory(pair, pattern, outcome):
     memory["pairs"][pair]["trades"] += 1
     if outcome == "win":
         memory["pairs"][pair]["wins"] += 1
-
     if pattern not in memory["patterns"]:
         memory["patterns"][pattern] = {"wins": 0, "trades": 0}
     memory["patterns"][pattern]["trades"] += 1
@@ -55,13 +54,13 @@ def update_memory(pair, pattern, outcome):
 
 def pattern_win_rate(pattern):
     stats = memory["patterns"].get(pattern)
-    if stats and stats["trades"] >= 5:
+    if stats and stats["trades"] >= 3:
         return stats["wins"] / stats["trades"]
     return 0.55
 
 def pair_win_rate(pair):
     stats = memory["pairs"].get(pair)
-    if stats and stats["trades"] >= 5:
+    if stats and stats["trades"] >= 3:
         return stats["wins"] / stats["trades"]
     return 0.55
 
@@ -88,7 +87,7 @@ def unlock_pair(pair):
         del memory["locks"][pair]
         save_memory()
 
-# ─── TELEGRAM FEEDBACK POLLING ────────────
+# ─── TELEGRAM FEEDBACK ────────────────────
 def get_offset():
     if os.path.exists(TELEGRAM_OFFSET_FILE):
         with open(TELEGRAM_OFFSET_FILE) as f:
@@ -138,7 +137,7 @@ def process_feedback():
                 pattern = memory["signals"][signal_id]["pattern"]
                 update_memory(pair, pattern, outcome)
                 unlock_pair(pair)
-                logger.info(f"Feedback: {signal_id} marked as {outcome}")
+                logger.info(f"Feedback: {signal_id} → {outcome}")
         save_offset(offset)
     except Exception as e:
         logger.error(f"Feedback error: {e}")
@@ -165,15 +164,15 @@ def check_stats_command():
                     s = memory["pairs"].get(pair, {"wins":0,"trades":0})
                     wr = (s["wins"]/s["trades"]*100) if s["trades"]>0 else 0
                     stats_msg += f"<b>{pair}</b>: {s['wins']}W/{s['trades']}T ({wr:.0f}%)\n"
-                stats_msg += "━━━━━━━━━━━━━━━━━\n<b>Patterns:</b>\n"
+                stats_msg += "━━━━━━━━━━━━━━━━━\n<b>Top Patterns:</b>\n"
                 for pat, s in sorted(memory["patterns"].items(), key=lambda x: x[1]["trades"], reverse=True)[:5]:
                     wr = (s["wins"]/s["trades"]*100) if s["trades"]>0 else 0
-                    stats_msg += f"• {pat}: {wr:.0f}% ({s['trades']} trades)\n"
+                    stats_msg += f"• {pat}: {wr:.0f}% ({s['trades']}T)\n"
                 send_url = f"https://api.telegram.org/bot{token}/sendMessage"
                 requests.post(send_url, json={"chat_id": TELEGRAM_CHAT_ID, "text": stats_msg, "parse_mode": "HTML"})
         save_offset(offset)
     except Exception as e:
-        logger.error(f"Stats command error: {e}")
+        logger.error(f"Stats error: {e}")
 
 # ─── S/R DETECTION ─────────────────────────
 def find_swing_levels(df, window=5):
@@ -192,7 +191,7 @@ def find_swing_levels(df, window=5):
         clusters = []
         current = [levels[0]]
         for lvl in levels[1:]:
-            if abs(lvl - current[-1]) / current[-1] < 0.001:
+            if abs(lvl - current[-1]) / max(current[-1], 0.0001) < 0.001:
                 current.append(lvl)
             else:
                 clusters.append(np.mean(current))
@@ -256,7 +255,6 @@ last_signal_time = {}
 
 async def analyze_pair(symbol, bot):
     if is_pair_locked(symbol):
-        logger.info(f"{symbol} locked — waiting for feedback on previous signal.")
         return
 
     fetcher = DataFetcher(symbol)
@@ -285,36 +283,53 @@ async def analyze_pair(symbol, bot):
 
     curr = df1.iloc[-1]
     prev = df1.iloc[-2]
-    candle_type, strength = detect_candle(curr)
-    pinbar_type, pin_strength = detect_pinbar(curr)
+    candle_type, _ = detect_candle(curr)
+    pinbar_type, _ = detect_pinbar(curr)
     engulfing_type, engulf_strength = detect_engulfing(prev, curr)
 
     signal = None
     pattern_used = None
     entry = price
-    sl = tp1 = tp2 = 0
 
-    if trend == "UP" and nearest_support and price <= nearest_support * 1.002:
-        if engulfing_type == "bullish_engulfing" and engulf_strength > 0.6:
-            signal = "BUY"
-            pattern_used = "Bullish Engulfing @ Support"
-        elif pinbar_type == "bullish_pinbar":
-            signal = "BUY"
-            pattern_used = "Bullish Pin Bar @ Support"
-        elif candle_type in ("hammer", "dragonfly_doji"):
-            signal = "BUY"
-            pattern_used = f"{candle_type.replace('_',' ').title()} @ Support"
+    # ── Bullish Setups ──
+    if trend == "UP":
+        near_support = nearest_support and price <= nearest_support * 1.005
+        near_ema = price <= ema21 * 1.002
+        bounce_zone = near_support or near_ema
 
-    if trend == "DOWN" and nearest_resistance and price >= nearest_resistance * 0.998:
-        if engulfing_type == "bearish_engulfing" and engulf_strength > 0.6:
-            signal = "SELL"
-            pattern_used = "Bearish Engulfing @ Resistance"
-        elif pinbar_type == "bearish_pinbar":
-            signal = "SELL"
-            pattern_used = "Bearish Pin Bar @ Resistance"
-        elif candle_type in ("shooting_star", "gravestone_doji"):
-            signal = "SELL"
-            pattern_used = f"{candle_type.replace('_',' ').title()} @ Resistance"
+        if bounce_zone:
+            if engulfing_type == "bullish_engulfing" and engulf_strength > 0.5:
+                signal = "BUY"
+                pattern_used = f"Bullish Engulfing @ {'Support' if near_support else 'EMA 21'}"
+            elif pinbar_type == "bullish_pinbar":
+                signal = "BUY"
+                pattern_used = f"Bullish Pin Bar @ {'Support' if near_support else 'EMA 21'}"
+            elif candle_type in ("hammer", "dragonfly_doji"):
+                signal = "BUY"
+                pattern_used = f"{candle_type.replace('_',' ').title()} @ {'Support' if near_support else 'EMA 21'}"
+            elif candle_type == "bullish_marubozu" and near_support:
+                signal = "BUY"
+                pattern_used = "Bullish Marubozu @ Support"
+
+    # ── Bearish Setups ──
+    if trend == "DOWN":
+        near_resistance = nearest_resistance and price >= nearest_resistance * 0.995
+        near_ema = price >= ema21 * 0.998
+        rejection_zone = near_resistance or near_ema
+
+        if rejection_zone:
+            if engulfing_type == "bearish_engulfing" and engulf_strength > 0.5:
+                signal = "SELL"
+                pattern_used = f"Bearish Engulfing @ {'Resistance' if near_resistance else 'EMA 21'}"
+            elif pinbar_type == "bearish_pinbar":
+                signal = "SELL"
+                pattern_used = f"Bearish Pin Bar @ {'Resistance' if near_resistance else 'EMA 21'}"
+            elif candle_type in ("shooting_star", "gravestone_doji"):
+                signal = "SELL"
+                pattern_used = f"{candle_type.replace('_',' ').title()} @ {'Resistance' if near_resistance else 'EMA 21'}"
+            elif candle_type == "bearish_marubozu" and near_resistance:
+                signal = "SELL"
+                pattern_used = "Bearish Marubozu @ Resistance"
 
     if not signal:
         return
@@ -329,7 +344,7 @@ async def analyze_pair(symbol, bot):
     pat_win = pattern_win_rate(pattern_used) if pattern_used else 0.55
     pair_win = pair_win_rate(symbol)
     confidence = int((pat_win * 0.6 + pair_win * 0.4) * 100)
-    if confidence < 55:
+    if confidence < MIN_CONFIDENCE:
         return
 
     sl_distance = atr * SL_ATR_MULT
@@ -360,13 +375,13 @@ async def analyze_pair(symbol, bot):
         f"━━━━━━━━━━━━━━━━━\n"
         f"📐 {pattern_used}\n"
         f"📊 Confidence: {confidence}% | ATR: {atr:.5f}\n"
-        f"📈 Trend: {trend} | S: {nearest_support:.5f} | R: {nearest_resistance:.5f}\n"
+        f"📈 Trend: {trend} | S: {nearest_support} | R: {nearest_resistance}\n"
         f"━━━━━━━━━━━━━━━━━\n"
         f"🤖 Supagold Scalper v2 | ⏰ {now.strftime('%H:%M UTC')}\n"
-        f"<i>Reply to this message with /win or /loss</i>"
+        f"<i>Reply /win or /loss after trade closes</i>"
     )
     await bot.send_message(message)
-    logger.info(f"Signal sent: {signal_id}")
+    logger.info(f"Signal: {signal_id}")
 
 async def main():
     process_feedback()
@@ -417,7 +432,7 @@ async def main():
                 f"✅ Bot is running\n"
                 f"⚠️ No valid price action setup at key levels\n"
                 f"━━━━━━━━━━━━━━━━━\n"
-                f"<i>Waiting for engulfing, pin bar, or hammer at S/R.</i>"
+                f"<i>Waiting for engulfing, pin bar, or hammer at S/R or EMA.</i>"
             )
             with open(hour_file, "w") as f:
                 f.write("sent")
