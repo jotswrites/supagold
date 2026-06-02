@@ -18,7 +18,7 @@ logger.add(sys.stdout, level="INFO", format="<green>{time:HH:mm:ss}</green> | <l
 
 # ─── CONFIG ───────────────────────────────
 PAIRS = ["XAUUSD", "GBPUSD"]
-SESSION_HOURS = (7, 21)  # Extended to capture London open
+SESSION_HOURS = (0, 24)  # All sessions including Asian
 SL_ATR_MULT = 1.0
 TP1_ATR_MULT = 1.5
 TP2_ATR_MULT = 2.5
