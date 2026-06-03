@@ -1,8 +1,8 @@
 """
-Supagold Scalper v2 — Pattern-First
-Fires on trend + pattern. Location optional. Feedback teaches quality.
+Supagold Scalper v2 — Momentum Breakout + EMA Pullback
+Fires on real price action. Feedback trains memory.
 """
-import asyncio, sys, os, json, time, requests
+import asyncio, sys, os, json, requests
 from datetime import datetime, timezone, timedelta
 from loguru import logger
 import pandas as pd
@@ -19,7 +19,6 @@ logger.add(sys.stdout, level="INFO", format="<green>{time:HH:mm:ss}</green> | <l
 
 # ─── CONFIG ───────────────────────────────
 PAIRS = ["XAUUSD", "GBPUSD"]
-SESSION_HOURS = (0, 24)
 SL_ATR_MULT = 1.0
 TP1_ATR_MULT = 1.5
 TP2_ATR_MULT = 2.5
@@ -27,7 +26,7 @@ MEMORY_FILE = "scalper_memory.json"
 ANTI_FLIP_MINUTES = 30
 LOCK_HOURS = 2
 TELEGRAM_OFFSET_FILE = "telegram_offset.txt"
-MIN_CONFIDENCE = 40  # very permissive
+MIN_CONFIDENCE = 40
 
 # ─── MEMORY ───────────────────────────────
 if os.path.exists(MEMORY_FILE):
@@ -175,58 +174,31 @@ def check_stats_command():
     except Exception as e:
         logger.error(f"Stats error: {e}")
 
-# ─── PATTERN DETECTION ─────────────────────
-def detect_candle(row):
-    body = abs(row["close"] - row["open"])
-    upper = row["high"] - max(row["open"], row["close"])
-    lower = min(row["open"], row["close"]) - row["low"]
-    total = row["high"] - row["low"]
-    if total == 0:
-        return None, 0
-    # Hammer
-    if lower >= 2 * body and upper <= body * 0.5 and body <= total * 0.4:
-        return "hammer", 0.75
-    # Shooting Star
-    if upper >= 2 * body and lower <= body * 0.5 and body <= total * 0.4:
-        return "shooting_star", 0.75
-    # Doji
-    if body <= total * 0.1:
-        if lower >= total * 0.6:
-            return "dragonfly_doji", 0.8
-        elif upper >= total * 0.6:
-            return "gravestone_doji", 0.8
-        return "doji", 0.5
-    # Marubozu
-    if body >= total * 0.8:
-        if row["close"] > row["open"]:
-            return "bullish_marubozu", 0.7
-        else:
-            return "bearish_marubozu", 0.7
-    return None, 0
-
-def detect_engulfing(prev, curr):
-    prev_body = abs(prev["close"] - prev["open"])
-    curr_body = abs(curr["close"] - curr["open"])
-    if curr_body < prev_body:
-        return None, 0
-    if prev["close"] < prev["open"] and curr["close"] > curr["open"] and curr["open"] <= prev["close"] and curr["close"] >= prev["open"]:
-        return "bullish_engulfing", min(1.0, curr_body / (prev_body + 0.00001) * 0.7)
-    if prev["close"] > prev["open"] and curr["close"] < curr["open"] and curr["open"] >= prev["close"] and curr["close"] <= prev["open"]:
-        return "bearish_engulfing", min(1.0, curr_body / (prev_body + 0.00001) * 0.7)
-    return None, 0
-
-def detect_pinbar(row):
-    body = abs(row["close"] - row["open"])
-    upper = row["high"] - max(row["open"], row["close"])
-    lower = min(row["open"], row["close"]) - row["low"]
-    total = row["high"] - row["low"]
-    if total == 0:
-        return None, 0
-    if lower >= 2.5 * body and upper <= body * 0.3:
-        return "bullish_pinbar", 0.8
-    if upper >= 2.5 * body and lower <= body * 0.3:
-        return "bearish_pinbar", 0.8
-    return None, 0
+# ─── S/R DETECTION ─────────────────────────
+def find_swing_levels(df, window=5):
+    highs, lows = df["high"].values, df["low"].values
+    resistance_levels = []
+    support_levels = []
+    for i in range(window, len(df) - window):
+        if highs[i] == max(highs[i-window:i+window+1]):
+            resistance_levels.append(highs[i])
+        if lows[i] == min(lows[i-window:i+window+1]):
+            support_levels.append(lows[i])
+    def cluster(levels):
+        if not levels:
+            return []
+        levels = sorted(set(levels))
+        clusters = []
+        current = [levels[0]]
+        for lvl in levels[1:]:
+            if abs(lvl - current[-1]) / max(current[-1], 0.0001) < 0.001:
+                current.append(lvl)
+            else:
+                clusters.append(np.mean(current))
+                current = [lvl]
+        clusters.append(np.mean(current))
+        return sorted(clusters)
+    return cluster(support_levels), cluster(resistance_levels)
 
 # ─── SIGNAL GENERATION ─────────────────────
 last_signal_time = {}
@@ -237,67 +209,69 @@ async def analyze_pair(symbol, bot):
 
     fetcher = DataFetcher(symbol)
     df15 = fetcher.fetch_candles("15min", outputsize=100)
+    df5 = fetcher.fetch_candles("5min", outputsize=100)
     df1 = fetcher.fetch_candles("1min", outputsize=60)
-    if df15.empty or df1.empty:
+    if df15.empty or df5.empty or df1.empty:
         return
 
     price = df1["close"].iloc[-1]
 
-    # 15M trend
+    # ── 15M Trend ──
     df15["ema_21"] = calculate_ema(df15, 21)
-    ema21 = df15["ema_21"].iloc[-1]
-    trend = "UP" if price > ema21 else "DOWN"
+    ema21_15 = df15["ema_21"].iloc[-1]
+    trend = "UP" if price > ema21_15 else "DOWN"
 
-    # ATR
+    # ── ATR ──
     df15["atr_14"] = calculate_atr(df15, 14)
     atr = df15["atr_14"].iloc[-1]
     if atr <= 0:
         return
 
-    # Patterns
-    curr = df1.iloc[-1]
-    prev = df1.iloc[-2]
-    candle_type, _ = detect_candle(curr)
-    pinbar_type, _ = detect_pinbar(curr)
-    engulfing_type, engulf_strength = detect_engulfing(prev, curr)
+    # ── S/R Levels ──
+    supports, resistances = find_swing_levels(df15)
+    nearest_support = max([s for s in supports if s < price], default=None)
+    nearest_resistance = min([r for r in resistances if r > price], default=None)
 
     signal = None
     pattern_used = None
 
-    # ── BUY Setups (trend UP) ──
-    if trend == "UP":
-        if engulfing_type == "bullish_engulfing" and engulf_strength > 0.4:
-            signal = "BUY"
-            pattern_used = "Bullish Engulfing"
-        elif pinbar_type == "bullish_pinbar":
-            signal = "BUY"
-            pattern_used = "Bullish Pin Bar"
-        elif candle_type in ("hammer", "dragonfly_doji"):
-            signal = "BUY"
-            pattern_used = candle_type.replace("_", " ").title()
-        elif candle_type == "bullish_marubozu":
-            signal = "BUY"
-            pattern_used = "Bullish Marubozu"
+    # ── 5M EMA 21 for pullback ──
+    df5["ema_21"] = calculate_ema(df5, 21)
+    ema21_5 = df5["ema_21"].iloc[-1]
+    prev_ema21_5 = df5["ema_21"].iloc[-2]
 
-    # ── SELL Setups (trend DOWN) ──
-    if trend == "DOWN":
-        if engulfing_type == "bearish_engulfing" and engulf_strength > 0.4:
+    # ── 1M candle properties ──
+    curr = df1.iloc[-1]
+    prev = df1.iloc[-2]
+    curr_range = curr["high"] - curr["low"]
+    curr_body = abs(curr["close"] - curr["open"])
+    body_ratio = curr_body / curr_range if curr_range > 0 else 0
+    close_location = (curr["close"] - curr["low"]) / curr_range if curr_range > 0 else 0.5
+
+    # ── STRATEGY 1: Momentum Breakout ──
+    if trend == "DOWN" and nearest_support and curr["close"] < nearest_support:
+        if body_ratio >= 0.6 and close_location <= 0.2:
             signal = "SELL"
-            pattern_used = "Bearish Engulfing"
-        elif pinbar_type == "bearish_pinbar":
+            pattern_used = "Momentum Breakdown"
+    elif trend == "UP" and nearest_resistance and curr["close"] > nearest_resistance:
+        if body_ratio >= 0.6 and close_location >= 0.8:
+            signal = "BUY"
+            pattern_used = "Momentum Breakout"
+
+    # ── STRATEGY 2: EMA 21 Pullback ──
+    if not signal:
+        if trend == "UP" and curr["close"] > ema21_5 and prev["close"] <= prev_ema21_5:
+            # Price just bounced off 5M EMA 21
+            signal = "BUY"
+            pattern_used = "EMA 21 Bounce"
+        elif trend == "DOWN" and curr["close"] < ema21_5 and prev["close"] >= prev_ema21_5:
             signal = "SELL"
-            pattern_used = "Bearish Pin Bar"
-        elif candle_type in ("shooting_star", "gravestone_doji"):
-            signal = "SELL"
-            pattern_used = candle_type.replace("_", " ").title()
-        elif candle_type == "bearish_marubozu":
-            signal = "SELL"
-            pattern_used = "Bearish Marubozu"
+            pattern_used = "EMA 21 Rejection"
 
     if not signal:
         return
 
-    # Anti-flip
+    # ── Anti-flip ──
     now = datetime.now(timezone.utc)
     if symbol in last_signal_time:
         last_time, last_dir = last_signal_time[symbol]
@@ -305,14 +279,14 @@ async def analyze_pair(symbol, bot):
             return
     last_signal_time[symbol] = (now, signal)
 
-    # Confidence
+    # ── Confidence ──
     pat_win = pattern_win_rate(pattern_used) if pattern_used else 0.50
     pair_win = pair_win_rate(symbol)
     confidence = int((pat_win * 0.6 + pair_win * 0.4) * 100)
     if confidence < MIN_CONFIDENCE:
         return
 
-    # SL/TP
+    # ── SL/TP ──
     sl_distance = atr * SL_ATR_MULT
     tp1_distance = atr * TP1_ATR_MULT
     tp2_distance = atr * TP2_ATR_MULT
@@ -341,7 +315,7 @@ async def analyze_pair(symbol, bot):
         f"━━━━━━━━━━━━━━━━━\n"
         f"📐 {pattern_used}\n"
         f"📊 Confidence: {confidence}% | ATR: {atr:.5f}\n"
-        f"📈 Trend: {trend}\n"
+        f"📈 Trend: {trend} | S: {nearest_support} | R: {nearest_resistance}\n"
         f"━━━━━━━━━━━━━━━━━\n"
         f"🤖 Supagold Scalper v2 | ⏰ {now.strftime('%H:%M UTC')}\n"
         f"<i>Reply /win or /loss after trade closes</i>"
@@ -365,16 +339,21 @@ async def main():
         except Exception as e:
             logger.error(f"Error {pair}: {e}")
 
-    # Always send a status message so you know it ran
     if signals_sent == 0:
-        await bot.send_message(
-            f"🔍 <b>Scanning</b> — {now.strftime('%H:%M UTC')}\n"
-            f"No pattern detected on {', '.join(PAIRS)} in trend direction.\n"
-            f"━━━━━━━━━━━━━━━━━\n"
-            f"<i>Waiting for engulfing, pin bar, hammer, or marubozu.</i>"
-        )
-    else:
-        await bot.send_message(f"⚡ {signals_sent} signal(s) sent this cycle.")
+        # Only send "Scanning" once per 4 hours
+        status_file = f"status_{now.hour // 4}.txt"
+        if not os.path.exists(status_file):
+            await bot.send_message(
+                f"🔍 <b>Scanning</b> — {now.strftime('%H:%M UTC')}\n"
+                f"Watching for Momentum Breakouts + EMA Pullbacks\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+                f"<i>No valid setup at this moment.</i>"
+            )
+            with open(status_file, "w") as f:
+                f.write("sent")
+            for fname in os.listdir("."):
+                if fname.startswith("status_") and fname != status_file:
+                    os.remove(fname)
 
 if __name__ == "__main__":
     asyncio.run(main())
