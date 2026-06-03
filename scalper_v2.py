@@ -1,6 +1,6 @@
 """
-Supagold Scalper v2 — Clean & Aggressive
-Price Action at S/R + EMA | No Volume Proxy | No ATR Floor | 24/7
+Supagold Scalper v2 — Pattern-First
+Fires on trend + pattern. Location optional. Feedback teaches quality.
 """
 import asyncio, sys, os, json, time, requests
 from datetime import datetime, timezone, timedelta
@@ -27,7 +27,7 @@ MEMORY_FILE = "scalper_memory.json"
 ANTI_FLIP_MINUTES = 30
 LOCK_HOURS = 2
 TELEGRAM_OFFSET_FILE = "telegram_offset.txt"
-MIN_CONFIDENCE = 45
+MIN_CONFIDENCE = 40  # very permissive
 
 # ─── MEMORY ───────────────────────────────
 if os.path.exists(MEMORY_FILE):
@@ -175,32 +175,6 @@ def check_stats_command():
     except Exception as e:
         logger.error(f"Stats error: {e}")
 
-# ─── S/R DETECTION ─────────────────────────
-def find_swing_levels(df, window=5):
-    highs, lows = df["high"].values, df["low"].values
-    resistance_levels = []
-    support_levels = []
-    for i in range(window, len(df) - window):
-        if highs[i] == max(highs[i-window:i+window+1]):
-            resistance_levels.append(highs[i])
-        if lows[i] == min(lows[i-window:i+window+1]):
-            support_levels.append(lows[i])
-    def cluster(levels):
-        if not levels:
-            return []
-        levels = sorted(set(levels))
-        clusters = []
-        current = [levels[0]]
-        for lvl in levels[1:]:
-            if abs(lvl - current[-1]) / max(current[-1], 0.0001) < 0.001:
-                current.append(lvl)
-            else:
-                clusters.append(np.mean(current))
-                current = [lvl]
-        clusters.append(np.mean(current))
-        return sorted(clusters)
-    return cluster(support_levels), cluster(resistance_levels)
-
 # ─── PATTERN DETECTION ─────────────────────
 def detect_candle(row):
     body = abs(row["close"] - row["open"])
@@ -259,7 +233,6 @@ last_signal_time = {}
 
 async def analyze_pair(symbol, bot):
     if is_pair_locked(symbol):
-        logger.info(f"{symbol}: Locked")
         return
 
     fetcher = DataFetcher(symbol)
@@ -269,11 +242,6 @@ async def analyze_pair(symbol, bot):
         return
 
     price = df1["close"].iloc[-1]
-
-    # S/R
-    supports, resistances = find_swing_levels(df15)
-    nearest_support = max([s for s in supports if s < price], default=None)
-    nearest_resistance = min([r for r in resistances if r > price], default=None)
 
     # 15M trend
     df15["ema_21"] = calculate_ema(df15, 21)
@@ -295,47 +263,36 @@ async def analyze_pair(symbol, bot):
 
     signal = None
     pattern_used = None
-    entry = price
 
-    # ── BUY Setups ──
+    # ── BUY Setups (trend UP) ──
     if trend == "UP":
-        near_support = nearest_support and price <= nearest_support * 1.008
-        near_ema = price <= ema21 * 1.003
-        zone = near_support or near_ema
+        if engulfing_type == "bullish_engulfing" and engulf_strength > 0.4:
+            signal = "BUY"
+            pattern_used = "Bullish Engulfing"
+        elif pinbar_type == "bullish_pinbar":
+            signal = "BUY"
+            pattern_used = "Bullish Pin Bar"
+        elif candle_type in ("hammer", "dragonfly_doji"):
+            signal = "BUY"
+            pattern_used = candle_type.replace("_", " ").title()
+        elif candle_type == "bullish_marubozu":
+            signal = "BUY"
+            pattern_used = "Bullish Marubozu"
 
-        if zone:
-            if engulfing_type == "bullish_engulfing" and engulf_strength > 0.4:
-                signal = "BUY"
-                pattern_used = f"Bullish Engulfing @ {'Support' if near_support else 'EMA'}"
-            elif pinbar_type == "bullish_pinbar":
-                signal = "BUY"
-                pattern_used = f"Bullish Pin Bar @ {'Support' if near_support else 'EMA'}"
-            elif candle_type in ("hammer", "dragonfly_doji"):
-                signal = "BUY"
-                pattern_used = f"{candle_type.replace('_',' ').title()} @ {'Support' if near_support else 'EMA'}"
-            elif candle_type == "bullish_marubozu" and near_support:
-                signal = "BUY"
-                pattern_used = "Bullish Marubozu @ Support"
-
-    # ── SELL Setups ──
+    # ── SELL Setups (trend DOWN) ──
     if trend == "DOWN":
-        near_resistance = nearest_resistance and price >= nearest_resistance * 0.992
-        near_ema = price >= ema21 * 0.997
-        zone = near_resistance or near_ema
-
-        if zone:
-            if engulfing_type == "bearish_engulfing" and engulf_strength > 0.4:
-                signal = "SELL"
-                pattern_used = f"Bearish Engulfing @ {'Resistance' if near_resistance else 'EMA'}"
-            elif pinbar_type == "bearish_pinbar":
-                signal = "SELL"
-                pattern_used = f"Bearish Pin Bar @ {'Resistance' if near_resistance else 'EMA'}"
-            elif candle_type in ("shooting_star", "gravestone_doji"):
-                signal = "SELL"
-                pattern_used = f"{candle_type.replace('_',' ').title()} @ {'Resistance' if near_resistance else 'EMA'}"
-            elif candle_type == "bearish_marubozu" and near_resistance:
-                signal = "SELL"
-                pattern_used = "Bearish Marubozu @ Resistance"
+        if engulfing_type == "bearish_engulfing" and engulf_strength > 0.4:
+            signal = "SELL"
+            pattern_used = "Bearish Engulfing"
+        elif pinbar_type == "bearish_pinbar":
+            signal = "SELL"
+            pattern_used = "Bearish Pin Bar"
+        elif candle_type in ("shooting_star", "gravestone_doji"):
+            signal = "SELL"
+            pattern_used = candle_type.replace("_", " ").title()
+        elif candle_type == "bearish_marubozu":
+            signal = "SELL"
+            pattern_used = "Bearish Marubozu"
 
     if not signal:
         return
@@ -360,17 +317,17 @@ async def analyze_pair(symbol, bot):
     tp1_distance = atr * TP1_ATR_MULT
     tp2_distance = atr * TP2_ATR_MULT
     if signal == "BUY":
-        sl = round(entry - sl_distance, 5)
-        tp1 = round(entry + tp1_distance, 5)
-        tp2 = round(entry + tp2_distance, 5)
+        sl = round(price - sl_distance, 5)
+        tp1 = round(price + tp1_distance, 5)
+        tp2 = round(price + tp2_distance, 5)
     else:
-        sl = round(entry + sl_distance, 5)
-        tp1 = round(entry - tp1_distance, 5)
-        tp2 = round(entry - tp2_distance, 5)
+        sl = round(price + sl_distance, 5)
+        tp1 = round(price - tp1_distance, 5)
+        tp2 = round(price - tp2_distance, 5)
 
     signal_id = f"SCALP-{now.strftime('%Y%m%d%H%M%S')}-{symbol}"
     memory["signals"][signal_id] = {
-        "pair": symbol, "pattern": pattern_used, "entry": entry,
+        "pair": symbol, "pattern": pattern_used, "entry": price,
         "signal": signal, "time": now.isoformat(), "outcome": None
     }
     lock_pair(symbol, signal_id)
@@ -379,18 +336,18 @@ async def analyze_pair(symbol, bot):
     message = (
         f"⚡ <b>SCALP — {symbol}</b> — <code>#{signal_id}</code>\n"
         f"━━━━━━━━━━━━━━━━━\n"
-        f"🎯 {signal} @ {entry:.5f}\n"
+        f"🎯 {signal} @ {price:.5f}\n"
         f"🛑 SL: {sl:.5f} | ✅ TP1: {tp1:.5f} | ✅ TP2: {tp2:.5f}\n"
         f"━━━━━━━━━━━━━━━━━\n"
         f"📐 {pattern_used}\n"
         f"📊 Confidence: {confidence}% | ATR: {atr:.5f}\n"
-        f"📈 Trend: {trend} | S: {nearest_support} | R: {nearest_resistance}\n"
+        f"📈 Trend: {trend}\n"
         f"━━━━━━━━━━━━━━━━━\n"
         f"🤖 Supagold Scalper v2 | ⏰ {now.strftime('%H:%M UTC')}\n"
         f"<i>Reply /win or /loss after trade closes</i>"
     )
     await bot.send_message(message)
-    logger.info(f"⚡ SIGNAL: {signal_id} | {symbol} {signal} @ {entry}")
+    logger.info(f"⚡ SIGNAL: {signal_id} | {symbol} {signal} @ {price}")
 
 async def main():
     process_feedback()
@@ -408,23 +365,16 @@ async def main():
         except Exception as e:
             logger.error(f"Error {pair}: {e}")
 
-    # Status message only once per 4 hours
-    status_file = f"status_{now.hour // 4}.txt"
-    if not os.path.exists(status_file):
-        if signals_sent > 0:
-            await bot.send_message(f"⚡ {signals_sent} signal(s) sent this cycle.")
-        else:
-            await bot.send_message(
-                f"🔍 <b>Scanning</b> — {now.strftime('%H:%M UTC')}\n"
-                f"XAUUSD: {PAIRS[0]} | GBPUSD: {PAIRS[1]}\n"
-                f"No setup at key levels right now."
-            )
-        with open(status_file, "w") as f:
-            f.write("sent")
-        # Clean old status files
-        for fname in os.listdir("."):
-            if fname.startswith("status_") and fname != status_file:
-                os.remove(fname)
+    # Always send a status message so you know it ran
+    if signals_sent == 0:
+        await bot.send_message(
+            f"🔍 <b>Scanning</b> — {now.strftime('%H:%M UTC')}\n"
+            f"No pattern detected on {', '.join(PAIRS)} in trend direction.\n"
+            f"━━━━━━━━━━━━━━━━━\n"
+            f"<i>Waiting for engulfing, pin bar, hammer, or marubozu.</i>"
+        )
+    else:
+        await bot.send_message(f"⚡ {signals_sent} signal(s) sent this cycle.")
 
 if __name__ == "__main__":
     asyncio.run(main())
